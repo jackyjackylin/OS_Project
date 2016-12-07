@@ -8,6 +8,6 @@ void main(){
         scanf("%f", &Data);
         sum = sum + Data;
         inv = inv+1;
-    printf( "¥­§¡­È= %f ",sum/5.0);
+    printf( "¥­§¡­È= %f ",sum/6.0);
 
 }
