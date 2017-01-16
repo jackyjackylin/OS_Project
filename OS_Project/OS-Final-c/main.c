@@ -6,13 +6,14 @@
 #include <ctype.h>
 #include <string.h>
 #include <unistd.h>
+#include <math.h>
 
 #define TRUE 1
-#define TOT_RESOURCES 3
+#define TOT_RESOURCES 1
 #define TOT_PROCESSES 5
 #define MAX_SLEEP 5
 #define MINN 0  //minimum value of an element in buffer
-#define MAXX 1000 //maximum value of an element in buffer
+#define MAXX 1000  //maximum value of an element in buffer
 
 pthread_mutex_t mutex;
 sem_t empty;
@@ -26,8 +27,21 @@ int availableResources[TOT_RESOURCES];
 int emptyResources = 0;
 int processNum[TOT_PROCESSES];
 int runtime = 0;
-
+int isExit[TOT_PROCESSES] = {0};
 void *customer(void *param);
+
+int poisson(float lamda) {
+    int k = 0;
+    float p = 1, L, u;
+    L= exp(-lamda);
+    while (1) {
+        k++;
+        u = (float) rand()/RAND_MAX;
+        p = p * u;
+        if (p < L) break;
+    }
+    return (k - 1);
+}
 
 int myRand() {
     return rand() % (MAXX - MINN + 1) + MINN;
@@ -35,15 +49,30 @@ int myRand() {
 
 /* Print out the workState, needDate, maxState, and available resources. */
 int printState(){
-    printf("\n<Available resources>\n");
-    printf("%d %d %d\n", availableResources[0], availableResources[1],availableResources[2]);
-    printf("<workState> <needState> <maxState>\n");
+    
+    //printf("<銀行金額>\n");
+    //printf("%d %d %d                               |\n", availableResources[0], availableResources[1],availableResources[2]);
+    printf("\n銀行金額:%d million\n", availableResources[0]);
+    printf("----------------------------------------------------------\n");
+    printf("               <已借金額>        <差額>        <需借金額> |\n");
+    
     for (int i=0; i < TOT_PROCESSES; i++){
-        printf("%d  %d  %d       ", workState[i][0], workState[i][1], workState[i][2]);
-        printf("%d  %d  %d       ", needState[i][0], needState[i][1], needState[i][2]);
-        printf("%d  %d  %d", maxWorkState[i][0], maxWorkState[i][1], maxWorkState[i][2]);
-        printf("\n");
+        
+        if(isExit[i] == 0){
+            
+            //          printf("%d  %d  %d       ", workState[i][0], workState[i][1], workState[i][2]);
+            //          printf("%d  %d  %d       ", needState[i][0], needState[i][1], needState[i][2]);
+            //          printf("%d  %d  %d |", maxWorkState[i][0], maxWorkState[i][1], maxWorkState[i][2]);
+            printf("Customer# %d    ", i);
+            printf("%d million       ", workState[i][0]);
+            printf("%d million       ", needState[i][0]);
+            printf("%d million  |", maxWorkState[i][0]);
+            
+            printf("\n");
+        }
     }
+    
+    printf("----------------------------------------------------------\n\n");
     
     return 0;
 }
@@ -52,18 +81,20 @@ int printState(){
  * Check if the system is in a safe state.
  */
 int safety_test(int tmpWS[TOT_PROCESSES][TOT_RESOURCES],int tmpAR[TOT_RESOURCES]){
+    
     int finishState[TOT_PROCESSES] = {0, 0, 0, 0, 0};
     int finishCount = 0;
     
-    /* Cycle through each process to determine the safe state. */
+    /* Cycle through each process to determine the safe state.*/
     /* It may take up to nxn comparisons to find the safe state.*/
     for (int k=0; k < TOT_PROCESSES; k++){
         for (int i=0; i < TOT_PROCESSES; i++){
+            
             //printf("\nIteration %d\n", i);
+            
             if (!finishState[i]){
                 int resourceCount = 0;
-                
-                /* Check whether the need for resources can be met. */
+                /* Check whether the need for resources can be met.*/
                 for (int j=0; j < TOT_RESOURCES; j++){
                     if ((maxWorkState[i][j] - tmpWS[i][j]) <= tmpAR[j]){
                         resourceCount++;
@@ -71,36 +102,45 @@ int safety_test(int tmpWS[TOT_PROCESSES][TOT_RESOURCES],int tmpAR[TOT_RESOURCES]
                 }
                 
                 /* If the need can be met, set the state as finished and
-                 * add the resources to the available resources tmpAR */
+                 * add the resources to the available resources tmpAR
+                 */
                 if (resourceCount == TOT_RESOURCES){
+                    
                     finishState[i] = 1;
                     finishCount++;
+                    
                     for (int j=0; j < TOT_RESOURCES; j++){
                         tmpAR[j] = tmpAR[j] + tmpWS[i][j];
                     }
                 }
             }
+            
             /* Safe state found, return 1. */
             if (finishCount == TOT_PROCESSES){
                 return 1;
             }
         }
     }
+    
     /* Safe state not found, return 0. */
     return 0;
 }
 
 int init_StartState(FILE* st){
+    
     int i = 0; // Process index#
     char c = ',';
+    
     /* Get the work values from max_demand.txt */
     for (int j=0; j < (TOT_PROCESSES*TOT_RESOURCES) ; j++){
+        
         if (!(EOF == fscanf(st, "%d%c", &i, &c))){
             workState[j/TOT_RESOURCES][j%TOT_RESOURCES] = 0;
             maxWorkState[j/TOT_RESOURCES][j%TOT_RESOURCES] = i;
             needState[j/TOT_RESOURCES][j%TOT_RESOURCES] = i;
         }
     }
+    
     return 1;
 }
 
@@ -111,18 +151,29 @@ int release_resources(int pNum)
 {
     /* Acquire the mutex lock. */
     pthread_mutex_lock(&mutex);
+    
     buffer_time += 1; // Increment the time.
     
-    printf("\nTime %d Customer# %d releasing ", buffer_time, pNum);
+    //printf("\nTime %d Customer# %d releasing ", buffer_time, pNum);
+    
+    printf("\nCustomer# %d 歸還 ", pNum);
+    
+    isExit[pNum] = 1;//Customer leave after release_resources
     
     /* Add resources back to availableResources. */
     for (int i=0; i < TOT_RESOURCES; i++){
-        printf("%d ", maxWorkState[pNum][i]);
+        
+        printf("%d million", maxWorkState[pNum][i]);
+        
         availableResources[i] = availableResources[i] + maxWorkState[pNum][i];
-        needState[pNum][i] = maxWorkState[pNum][i];
+        //needState[pNum][i] = maxWorkState[pNum][i];
+        maxWorkState[pNum][i] = 0;
         workState[pNum][i] = 0;
     }
-    printf("\n");
+    
+    printf("\n\n");
+    
+    printState();
     
     /* Release the mutex lock. */
     pthread_mutex_unlock(&mutex);
@@ -144,24 +195,27 @@ int request_resources(int pNum)
     buffer_time += 1; // Increment the time.
     
     for (int i=0; i < TOT_RESOURCES; i++){
+        
         if (needState[pNum][i] != 0){
+            
             rRequest[i] = rand() % needState[pNum][i] + 1;
         }
-        else {
-            rRequest[i] = 0;
-        }
+        else
+        {rRequest[i] = 0;}
+        
         /* If the request is too high, set as max avail.*/
-        if (rRequest[i] > availableResources[i]){
-            rRequest[i] = availableResources[i];
-        }
-        if (availableResources[i] == 0){
-            emptyResources ++;
-        }
+        if (rRequest[i] > availableResources[i])
+        {rRequest[i] = availableResources[i];}
+        
+        if (availableResources[i] == 0)
+        {emptyResources ++;}
     }
     
     if (emptyResources == TOT_RESOURCES){
+        
         /* Release mutex lock */
         pthread_mutex_unlock(&mutex);
+        
         return 0;
     }
     
@@ -172,22 +226,31 @@ int request_resources(int pNum)
     /* Create a temporary work state and resource request. */
     for (int i=0; i < TOT_PROCESSES; i++){
         for (int j=0; j < TOT_RESOURCES; j++){
+            
             tmpWorkState[i][j] = workState[i][j];
+            
             if (i == pNum){
+                
                 tmpWorkState[i][j] = tmpWorkState[i][j] + rRequest[j];
                 tmpAvailRec[j] = availableResources[j] - rRequest[j];
             }
         }
     }
     
-    printf("\nTime %d  Customer# %d\n", buffer_time, pNum);
-    printf("		Requesting: %d %d %d\n", rRequest[0], rRequest[1], rRequest[2]);
-    printf("		Available:  %d %d %d\n", availableResources[0], availableResources[1], availableResources[2]);
+    //printf("\nTime %d  Customer# %d\n", buffer_time, pNum);
+    printf("\nCustomer# %d\n", pNum);
+    //printf("		Requesting: %d %d %d\n", rRequest[0], rRequest[1], rRequest[2]);
+    //printf("		Available:  %d %d %d\n", availableResources[0], availableResources[1], availableResources[2]);
+    printf("		顧客需要: %d million\n", rRequest[0]);
+    printf("		銀行金額: %d million\n", availableResources[0]);
     
     /* If the new work state is safe, then allocate resources. */
     if (safety_test(tmpWorkState, tmpAvailRec)){
+        
         int fullResCount = 0; // Count the number of full resources.
+        
         for (int i=0; i < TOT_RESOURCES; i++){
+            
             availableResources[i] = availableResources[i] - rRequest[i];
             workState[pNum][i] = workState[pNum][i] + rRequest[i];
             needState[pNum][i] = maxWorkState[pNum][i] - workState[pNum][i];
@@ -195,21 +258,32 @@ int request_resources(int pNum)
         }
         
         /* Print the result. */
-        printf("		Customer using resources...\n");
-        printf("		Allocated:  %d %d %d\n", rRequest[0], rRequest[1], rRequest[2]);
-        printf("		Available:  %d %d %d\n", availableResources[0], availableResources[1], availableResources[2]);
-        //printState();
+        printf("		處理中...\n");
+        //printf("		Allocated:  %d %d %d\n", rRequest[0], rRequest[1], rRequest[2]);
+        //printf("		Available:  %d %d %d\n", availableResources[0], availableResources[1], availableResources[2]);
+        printf("		銀行借出: %d million\n", rRequest[0]);
+        printf("		銀行餘額: %d million\n", availableResources[0]);
+        printf("\n");
+        
+        printf("Customer# %d 處理結束...\n", pNum);
+        
+        printState();
         
         /* Release the mutex lock. */
         pthread_mutex_unlock(&mutex);
+        
         return 1;
     }
     else{
-        printf("		INSUFFICIENT RESOURCES\n");
-        printf("		Customer# %d denied to avoid deadlock\n", pNum);
+        
+        printf("		銀行金額不足\n");
+        printf("		Customer# %d denied to avoid deadlock\n\n", pNum);
+        
+        printf("Customer# %d 處理結束...\n\n", pNum);
         
         /* Release the mutex lock. */
         pthread_mutex_unlock(&mutex);
+        
         return 0;
     }
     
@@ -223,31 +297,56 @@ int main(int argc, char *argv[])
 {
     //int sleepTime;
     int customerThreads;
-    int j;
+    int j = 0;
     FILE* stream = fopen("max_demand.txt", "r");
     
-    if(argc != 5)
+    if(argc != 3)
     {
         fprintf(stderr, "Useage: <Resource 1 quantity> <Resource 2 quantity> <Resource 3 quantity> <Runtime>\n");
+        
         return -1;
     }
     else{
-        runtime = atoi(argv[4]);
+        
+        runtime = atoi(argv[2]);
         availableResources[0] = atoi(argv[1]);
-        availableResources[1] = atoi(argv[2]);
-        availableResources[2] = atoi(argv[3]);
+        //availableResources[1] = atoi(argv[2]);
+        //availableResources[2] = atoi(argv[3]);
     }
     
-    if(!init_StartState(stream)){
-        fprintf(stderr, "File max_demand.txt not found.");
-    }
+    if(!init_StartState(stream))
+    {fprintf(stderr, "File max_demand.txt not found.");}
+    
+//    float lamda, sum = 0.0, mean, var;
+//    int i, Pran[100];
+//    printf("Input Lamda: ");
+//    scanf("%f", &lamda);
+//    printf("100 Poisson random numbers: ");
+//    for (i = 0; i < 100; i++) {
+//        Pran[i] = poisson(lamda);
+//        sum += Pran[i];
+//        printf("%d ", Pran[i]);
+//    }
+//    mean = sum / 100;
+//    printf("\nMean = %f\n", mean);
+//    sum = 0;
+//    for (i = 0; i < 100; i++) {
+//        sum += ((Pran[i] - mean)*(Pran[i] - mean));
+//    }
+//    var = sum/99;
+//    printf("var = %f\n", var);
     
     /* 5 customer threads. */
     customerThreads = TOT_PROCESSES;
     
     /* Initialize the synchronization tools */
-    printf("%d\n",pthread_mutex_init(&mutex, NULL));
-    srand(time(0));
+    //printf("%d\n",pthread_mutex_init(&mutex, NULL));
+    pthread_mutex_init(&mutex, NULL);
+    printf("\n		Start\n");
+    printf("\n------------------------------------------------------------------------------------------------------------------------------------------------------------------\n");
+    printState();
+    
+    srand((int)time(0));
     
     /* Create the customer threads */
     for(j = 0; j < customerThreads; j++)
@@ -258,7 +357,11 @@ int main(int argc, char *argv[])
         pthread_attr_init(&attr);
         pthread_create(&tid, &attr, customer, &processNum[j]);
     }
+    
     pthread_exit(NULL);
+    
+    
+    
     return 0;
 }
 
@@ -267,8 +370,8 @@ int main(int argc, char *argv[])
  * The thread uses this process number to make resource requests and release
  * resources.
  */
-
-void *customer(void *param) { 
+void *customer(void *param) {
+    
     int pNum = *((int*) param);
     //int resReq[TOT_RESOURCES];
     int r;
@@ -276,31 +379,44 @@ void *customer(void *param) {
     
     while(TRUE)
     {
-        r = rand() % MAX_SLEEP;
+        r = rand() % MAX_SLEEP + 1;
+        
+        printf("Customer# %d 等待中...\n", pNum);
         sleep(r); // Sleep for both holding and requesting resources.
+        printf("Customer# %d 完成等待...\n", pNum);
+        
         /* Release resources if maximum resources are satisfied. */
-        if (fullResCount == TOT_RESOURCES){		
+        if (fullResCount == TOT_RESOURCES){
+            
             if (release_resources(pNum)){
+                
                 fullResCount = 0;
-            }		
-            else{
+                
+                pthread_exit(NULL);
+            }
+            else
+            {
                 fprintf(stderr, "Error releasing resources");
             }
         }
-        
         /* Still need resources, create a random request of resources */
         else{
+            
             if (request_resources(pNum)){
+                
                 fullResCount = 0;
                 
                 /* Check whether all needs are met. */
                 for (int i=0; i < TOT_RESOURCES; i++){
-                    fullResCount = fullResCount + (needState[pNum][i] == 0); 
-                }	
+                    
+                    fullResCount = fullResCount + (needState[pNum][i] == 0);
+                }
             }
         }
-        if (buffer_time >= runtime){
-            break;	
+        
+        if (buffer_time >= runtime)
+        {
+            break;
         }
     }
     
